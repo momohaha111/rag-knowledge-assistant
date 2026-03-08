@@ -1,0 +1,5 @@
+faiss-cpu
+ollama
+gradio
+sentence-transformers
+numpy
