@@ -2,42 +2,68 @@ import faiss
 import ollama
 from sentence_transformers import SentenceTransformer
 
-EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2')
-LLM_MODEL = 'qwen3:4b'
-VECTOR_DIM = 384
+# ---------------- Config ----------------
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+LLM_MODEL = "qwen3:4b"
+TOP_K = 3
 
+# Load embedding model
+embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+
+VECTOR_DIM = 384
 index = faiss.IndexFlatL2(VECTOR_DIM)
+
 text_chunks = []
 
+# ---------------- Functions ----------------
+
 def load_document(file_path):
+
     global index, text_chunks
+
     index.reset()
     text_chunks = []
 
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
 
-    text_chunks = [chunk.strip() for chunk in text.split('\n') if chunk.strip()]
+    text_chunks = [c.strip() for c in text.split("\n") if c.strip()]
 
-    embeddings = EMBEDDING_MODEL.encode(text_chunks)
+    if len(text_chunks) == 0:
+        return "Document is empty."
+
+    embeddings = embedding_model.encode(text_chunks)
+
     index.add(embeddings)
 
-    return f"Loaded {len(text_chunks)} text chunks."
+    return f"Loaded {len(text_chunks)} chunks into vector store."
 
-def rag_chat(message):
-    query_embedding = EMBEDDING_MODEL.encode([message])
-    distances, indices = index.search(query_embedding, k=3)
 
-    context = "\n".join([text_chunks[idx] for idx in indices[0]])
+def retrieve_context(query):
+
+    query_embedding = embedding_model.encode([query])
+
+    distances, indices = index.search(query_embedding, k=TOP_K)
+
+    context = "\n".join(
+        [text_chunks[i] for i in indices[0] if i >= 0]
+    )
+
+    return context
+
+
+def generate_answer(query):
+
+    context = retrieve_context(query)
 
     prompt = f"""
-Answer the question strictly based on the context.
+Answer the user question strictly based on the context below.
 
 Context:
 {context}
 
 Question:
-{message}
+{query}
 
 Answer:
 """
@@ -47,4 +73,4 @@ Answer:
         messages=[{"role": "user", "content": prompt}]
     )
 
-    return response['message']['content']
+    return response["message"]["content"]
